@@ -1,0 +1,13 @@
+# n8n / Environment spezifisch
+.env
+.env.local
+*.log
+
+# Python / lokale Skripte (falls genutzt)
+__pycache__/
+*.pyc
+
+# Betriebssystem-Müll
+.DS_Store
+Thumbs.db
+Desktop.ini

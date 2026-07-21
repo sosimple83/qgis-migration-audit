@@ -1,0 +1,222 @@
+{
+  "name": "QGIS 4.2 LTR Migrations-Audit",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// QGIS 4.2 LTR MIGRATIONS-AUDIT (PHASE 2: DEFENSIVE PROGRAMMIERUNG)\n// ============================================================================\n\nlet outputJson = {};\n\ntry {\n  // 1. INPUT-NORMALISIERUNG MIT NULL-POINTER-SCHUTZ\n  const rawItem = ($input.first && $input.first().json) || (typeof items !== 'undefined' && items[0] ? items[0].json : {});\n  const item = rawItem.body || rawItem || {};  \n\n  const auditMode = String(item.audit_modus || item.audit_mode || 'anonym').toLowerCase();\n  const isAnonymous = auditMode === 'anonym' || auditMode === 'anonymous';\n\n  const userName = item.user_name || 'Sehr geehrte(r) Anwender(in)';\n  const userEmail = item.user_email || 'Nicht angegeben';\n  const userOrg = item.user_org || item.organization || 'Ihre Organisation';\n  const userRole = item.user_role || 'GIS-Verantwortliche(r)';\n\n  // Robuste Auslesung mit Fallbacks gegen undefined/null\n  const os = String(item.operating_system || '');\n  const seats = Number(item.gis_seats) > 0 ? Number(item.gis_seats) : 1;\n  const gpu = String(item.gpu_type || '');\n  const qgisVer = String(item.current_qgis_version || '');\n  const gdiComp = Array.isArray(item.gdi_components) ? item.gdi_components : [];\n  const hasPython = String(item.has_python || '').toLowerCase();\n  const pythonDetails = item.python_details || 'Keine Details angegeben.';\n  const itRestrictions = item.it_restrictions || 'Keine besonderen IT-Restriktionen angegeben.';\n\n  // 2. SCORING LOGIK (Start bei 20 Punkten)\n  let score = 20;\n  let riskFactors = [];\n  let recommendations = [];\n\n  // GPU / Hardware Check (Qt6 Rendering)\n  if (gpu === 'onboard' || gpu.includes('Onboard')) {\n    score -= 5;\n    riskFactors.push('Onboard-Grafikkarte (Intel HD/UHD): Performance-Engpass bei Qt6-Rendering möglich.');\n    recommendations.push('Prüfung der Hardware-Ausstattung: Aufrüstung auf dedizierte GPUs für intensive GIS-Arbeitsplätze empfohlen.');\n  } else if (gpu === 'vgpu' || gpu.includes('Virtuelle')) {\n    score -= 3;\n    riskFactors.push('Virtuelle Umgebung (Citrix/vGPU): Besondere Grafiktreiber-Konfiguration für Qt6 erforderlich.');\n    recommendations.push('Virtuelle Umgebung in Test-Image für QGIS 4 vorab evaluieren.');\n  } else if (gpu === 'unknown' || gpu.includes('Unbekannt')) {\n    score -= 2;\n    riskFactors.push('Hardware-Infrastruktur unklar: Prüfung der GPU-Kompatibilität erforderlich.');\n  }\n\n  // Betriebssystem\n  if (os.includes('Windows 10')) {\n    score -= 2;\n    riskFactors.push('Windows 10 Parallel-Migration: Support-Ende von Windows 10 beachten.');\n  }\n\n  // QGIS Alt-Versionen\n  if (qgisVer === 'qgis_2x' || qgisVer.includes('2.x')) {\n    score -= 6;\n    riskFactors.push('Sehr alte QGIS 2.x Basis: Extrem hoher Migrationsabstand, Projekt-Dateien nicht direkt kompatibel.');\n    recommendations.push('Mehrstufigen Migrationspfad (Projekt-Konvertierung über QGIS 3.34 LTR) ansetzen.');\n  } else if (qgisVer === 'qgis_3_28_or_older' || qgisVer.includes('3.28')) {\n    score -= 3;\n    riskFactors.push('QGIS-Version <= 3.28 LTR: Überholte Datenbankschnittstellen und veraltetes Plugin-System.');\n  }\n\n  // GDI Komponenten (Sicherer Array-Check)\n  if (gdiComp.includes('postgis')) {\n    recommendations.push('PostGIS-Verbindungen und Datentypen-Handling auf QGIS 4 / GDAL 3.8+ Standards testen.');\n  }\n  if (gdiComp.includes('sap')) {\n    score -= 3;\n    riskFactors.push('SAP/ERP-Schnittstelle vorhanden: Kopplung von Sachdaten erfordert erweiterte Integrationstests.');\n    recommendations.push('Schnittstellen-Audit für ERP-Kopplung durchführen.');\n  }\n  if (gdiComp.includes('wfs_wms')) {\n    recommendations.push('Überprüfung der OGC-Webservices (WFS/WMS) auf Strict-Schema-Validation in QGIS 4.');\n  }\n\n  // Python & Custom Plugins\n  if (hasPython === 'yes' || hasPython === 'ja' || hasPython.includes('ja')) {\n    score -= 4;\n    riskFactors.push('Eigene Python-Skripte / Plugins im Einsatz: PyQGIS API-Anpassungen (Python 3.12+ / PyQt6) erforderlich.');\n    recommendations.push('Code-Audit der bestehenden Python-Skripte / Plugins hinsichtlich PyQGIS 4 API-Changes.');\n  }\n\n  // Score Grenzen festlegen (0 - 20)\n  score = Math.max(0, Math.min(20, score));\n\n  // Risikostufe & Farbcodes\n  let riskLevel = 'NIEDRIGES RISIKO / BEREIT FÜR MIGRATION';\n  let riskColor = '#2f855a'; // Grün\n  let riskBg = '#f0fff4';\n\n  if (score < 10) {\n    riskLevel = 'HOHES RISIKO / HANDLUNGSBEDARF';\n    riskColor = '#c53030'; // Rot\n    riskBg = '#fff5f5';\n  } else if (score < 16) {\n    riskLevel = 'MITTLERES RISIKO / VORBEREITUNG NÖTIG';\n    riskColor = '#dd6b20'; // Orange\n    riskBg = '#fffaf0';\n  }\n\n  // Fallbacks\n  if (riskFactors.length === 0) {\n    riskFactors.push('Keine kritischen System-Blocker identifiziert.');\n  }\n  if (recommendations.length === 0) {\n    recommendations.push('Reguläre Teststellung mit QGIS 4.2 LTR durchführen.');\n  }\n  recommendations.push('Infrastruktur-Testumgebung für QGIS 4.2 LTR vor dem flächendeckenden Rollout aufbauen.');\n\n  // 3. HTML GENERATION\n  const riskFactorsListHtml = riskFactors.map(rf => `<li style=\"margin-bottom: 6px;\">${rf}</li>`).join('');\n  const recommendationsListHtml = recommendations.map(rec => `<li style=\"margin-bottom: 6px;\">${rec}</li>`).join('');\n\n  const anonymousTeaserHtml = `\n    <div style=\"background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 10px; padding: 24px; text-align: center; margin-top: 20px;\">\n      <h4 style=\"margin: 0 0 10px 0; font-size: 16px; color: #0f172a;\">🔒 Vollständigen 6-Punkte-Fahrplan freischalten</h4>\n      <p style=\"margin: 0 0 16px 0; font-size: 14px; color: #475569; line-height: 1.5;\">\n        Die konkreten Handlungsempfehlungen, Schnittstellen-Tests und der Migrations-Fahrplan für Ihre IT- & Amtsleitung sind im offiziellen PDF-Dossier enthalten.\n      </p>\n      <a href=\"https://qgis-profi.de\" target=\"_blank\" style=\"display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 14px; box-shadow: 0 4px 12px rgba(15,23,42,0.15);\">\n        📄 Offizielles PDF-Dossier kostenlos anfordern\n      </a>\n    </div>\n  `;\n\n  const legalDisclaimerHtml = `\n    <div style=\"margin-top: 30px; border-top: 1px solid #e2e8f0; padding-top: 12px; font-size: 10px; color: #94a3b8; line-height: 1.4; text-align: justify;\">\n      <strong>Hinweis & Haftungsausschluss:</strong> Dieser Migrations-Report stellt eine automatisierte, unverbindliche Ersteinschätzung auf Basis der von Ihnen angegebenen Systemparameter dar. Er ersetzt keine individuelle technische Detailanalyse oder Beratung vor Ort. Tobey GIS Consulting übernimmt keine Haftung für die Richtigkeit, Vollständigkeit oder für Schäden, die aus der Umsetzung der aufgetragene Empfehlungen entstehen.\n    </div>\n  `;\n\n  const htmlPreview = `\n  <div style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #0f172a; line-height: 1.5; padding: 10px;\">\n    <div style=\"text-align: left; margin-bottom: 20px; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px;\">\n      <span style=\"font-size: 12px; font-weight: 700; color: #0284c7; letter-spacing: 1px; text-transform: uppercase;\">TOBEY GIS CONSULTING</span>\n      <h2 style=\"margin: 4px 0 0 0; font-size: 22px; color: #0f172a;\">QGIS 4.2 LTR Migrations-Audit Report</h2>\n    </div>\n    <div style=\"background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; font-size: 13.5px;\">\n      <strong>Organisation:</strong> ${isAnonymous ? 'Anonyme Erstdiagnose' : userOrg}<br>\n      <strong>Systemumgebung:</strong> ${seats} GIS-Arbeitsplatz/Arbeitsplätze (${os})\n    </div>\n    <div style=\"text-align: center; padding: 24px; background: ${riskBg}; border-radius: 12px; border: 1px solid ${riskColor}40; margin-bottom: 24px;\">\n      <span style=\"font-size: 11px; font-weight: 700; color: #475569; letter-spacing: 1.5px; text-transform: uppercase;\">MIGRATIONS-BEREITSCHAFTS-SCORE</span>\n      <h1 style=\"font-size: 42px; margin: 8px 0; color: #0f172a; font-weight: 800;\">${score} / 20 <span style=\"font-size: 20px; color: #64748b;\">Punkten</span></h1>\n      <span style=\"background: ${riskColor}; color: white; padding: 6px 16px; border-radius: 20px; font-weight: 700; font-size: 12px; display: inline-block;\">\n        ${riskLevel}\n      </span>\n    </div>\n    <h3 style=\"font-size: 16px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; color: #0f172a;\">1. IDENTIFIZIERTE RISIKOFAKTOREN</h3>\n    <ul style=\"padding-left: 20px; color: #334155; font-size: 14px;\">\n      ${riskFactorsListHtml}\n    </ul>\n    <h3 style=\"font-size: 16px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-top: 24px; color: #0f172a;\">2. HANDLUNGSEMPFEHLUNGEN FÜR DIE IT / AMTSLEITUNG</h3>\n    ${isAnonymous ? anonymousTeaserHtml : `<ul style=\"padding-left: 20px; color: #334155; font-size: 14px;\">${recommendationsListHtml}</ul>`}\n    ${legalDisclaimerHtml}\n  </div>\n  `;\n\n  // Erfolgsausgabe mit valid: true\n  outputJson = {\n    valid: true,\n    audit_modus: auditMode,\n    is_anonymous: isAnonymous,\n    user_name: userName,\n    user_email: userEmail,\n    user_org: userOrg,\n    user_role: userRole,\n    operating_system: os,\n    gis_seats: seats,\n    score: score,\n    risk_level: riskLevel,\n    risk_factors: riskFactors,\n    recommendations: recommendations,\n    html_preview: htmlPreview\n  };\n\n} catch (error) {\n  // Dead-Letter-Handling Vorbereitung bei hartem Crash\n  outputJson = {\n    valid: false,\n    error_message: error.message,\n    html_preview: \"<div style='color: red; padding: 20px;'><strong>Fehler bei der Audit-Verarbeitung:</strong> Ungültige Eingabeparameter. Bitte Administrator kontaktieren.</div>\"\n  };\n}\n\nreturn { json: outputJson };"
+      },
+      "id": "41874f1c-4f1e-4f99-aa65-600339da4b89",
+      "name": "Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $('Code').item.json.html_preview }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "efd36e06-2833-40f7-a3e8-ce604a976f2d",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        840,
+        740
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "31dab187-7311-4031-aaa4-8aa559f8a8cb",
+              "leftValue": "={{ $json.audit_modus }}",
+              "rightValue": "personalisiert",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "495f2bd7-eed1-47a2-9784-5812afe50feb",
+      "name": "If",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        580,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.pdfshift.io/v3/convert/pdf",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.PDFSHIFT_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "source",
+              "value": "=<!DOCTYPE html><html><body>{{ $json.html_preview }}</body></html>"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "8df61bc5-75ad-4ac6-9b84-d89765f28cd5",
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "info@qgis-profi.de",
+        "toEmail": "={{ $('Code').item.json.user_email }}",
+        "subject": "Dein QGIS 4.2 LTR Migrations-Audit",
+        "html": "=Guten Tag {{ $('Code').item.json.user_name }},<br><br>\nvielen Dank für die Nutzung unseres QGIS 4.2 LTR Migrations-Audits.<br>\nAnbei findest du dein persönliches Migrations-Dossier als PDF.<br><br>\n\nMit freundlichen Grüßen<br>\n<strong>Tobey GIS Consulting</strong>",
+        "options": {
+          "attachments": "data"
+        }
+      },
+      "id": "b5219ae4-1703-46fb-abc9-ff83ec3b7abf",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1040,
+        520
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "DEINE_SMTP_CREDENTIAL_ID_HIER",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "={{ $env.WEBHOOK_PATH || 'qgis-audit-tranche' }}",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "https://qgis-profi.de"
+        }
+      },
+      "id": "a140ed51-67e3-4199-9ddb-270b72e6f0bc",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        540
+      ],
+      "webhookId": "qgis-audit-webhook-placeholder"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "clean-opensource-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "public-template-instance"
+  },
+  "id": "qgis-migration-audit-template",
+  "tags": []
+}
